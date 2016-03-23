@@ -1,24 +1,31 @@
 
 pe_particles = {}
 
+
+pe_particles.ENABLED		= true		-- enable or disable this mod from another mods
 --performance config
-local RADIUS = 16				-- searching radius
-local SOURCES = 20				-- maximum source(spawners) per effect
-local SPAWNERS = 50				-- maximum amount of particle spawners in world (too big value may freeze the server)
+pe_particles.RADIUS 		= 16		-- searching radius
+pe_particles.SOURCES 		= 20		-- maximum source(spawners) per effect
+pe_particles.SPAWNERS 		= 50		-- maximum amount of particle spawners in world (too big value may freeze the server)
 
 --effects
-local pTORCHES		= true		-- smoke from torches
-local pWDROPS		= true		-- water drops in the cave if water above the stone
-local pLDROPS		= true		-- lava drops in the cave if lava flows above
-local pLAVABOIL		= true		-- boiling lava
-local pFIRE			= true		-- fire smoke effect
-local pWATER		= true		-- underwater effect
-local pCLAUSTRUM	= true
-local pVEIL			= true
-local pLEAVES		= false
+pe_particles.eWIND			= true		-- wind effect adds to particles
+pe_particles.eWIND_max		= 5			-- maximum power of the wind ( 0 - 5 )
+--particles
+pe_particles.pTORCHES		= true		-- smoke from torches
+pe_particles.pWDROPS		= true		-- water drops in the cave if water above the stone
+pe_particles.pLDROPS		= true		-- lava drops in the cave if lava flows above
+pe_particles.pLAVABOIL		= true		-- boiling lava
+pe_particles.pFIRE			= true		-- fire smoke effect
+pe_particles.pWATER			= true		-- underwater effect
+pe_particles.pCLAUSTRUM		= true
+pe_particles.pVEIL			= true
+pe_particles.pLEAVES		= true
+pe_particles.pSANDSTORM		= true
+pe_particles.pSNOWSTORM		= true
 local pRAIN			= false
 local pSNOW			= false
-local pHEIL			= false
+local pBLIZZARD		= false
 local pASH			= false
 --mods
 local pACRIUM		= false
@@ -28,13 +35,7 @@ local pGLOOPTEST	= true
 local pCAVEREALMS	= true
 
 
-
-
-
-
-
-
-local debug = false
+local debug = true
 
 --mods auto
 if minetest.get_modpath("pe_acrium") == nil		then pACRIUM = false end
@@ -42,15 +43,21 @@ if minetest.get_modpath("pe_morefx") ==	nil		then pMOREFX = false end
 if minetest.get_modpath("pe_storm") == nil		then pSTORM = false end
 if minetest.get_modpath("glooptest") == nil		then pGLOOPTEST = false end
 if minetest.get_modpath("caverealms") == nil	then pCAVEREALMS = false end
-if not pACRIUM		then minetest.log("pe_particles: Mod pe_acrium not found")
-if not pMOREFX		then minetest.log("pe_particles: Mod pe_morefx not found")
-if not pSTORM		then minetest.log("pe_particles: Mod pe_storm not found")
-if not pGLOOPTEST	then minetest.log("pe_particles: Mod glooptest not found")
-if not pCAVEREALMS	then minetest.log("pe_particles: Mod caverealms not found")
+if not pACRIUM		then minetest.log("pe_particles: Mod pe_acrium not found") end
+if not pMOREFX		then minetest.log("pe_particles: Mod pe_morefx not found") end
+if not pSTORM		then minetest.log("pe_particles: Mod pe_storm not found") end
+if not pGLOOPTEST	then minetest.log("pe_particles: Mod glooptest not found") end
+if not pCAVEREALMS	then minetest.log("pe_particles: Mod caverealms not found") end
 
 
 
 local spawners = {}
+local tick = 0
+pe_particles.wind = vector.new()
+local wx = 0		-- wind x vel
+local wz = 0		-- wind z vel
+local wp = 0		-- wind max(x or z) vel
+
 
 local round = function(x)
   return x>=0 and math.floor(x+0.5) or math.ceil(x-0.5)
@@ -110,20 +117,26 @@ end
 
 pe_particles.torches = function(player)
 	local nodes = pe_particles.searchForNodes(player, "default:torch")
+	local lwx = wx
+	local lwz = wz
+	if minetest.get_node_light(player:getpos(), .5) ~= 15 then
+		lwx = 0
+		lwz = 0
+	end
+	
 --	pr(dump(player:get_look_dir()),player)
 --	pr(table.getn(nodes),player)
 --	pr(dump(nodes),player)
 --	print(dump(nodes))
 	for i, arr in ipairs(nodes) do
-		local np = {x=arr.x,y=arr.y,z=arr.z}
-		if i >= SOURCES+1 then break end
+		if i >= pe_particles.SOURCES+1 then break end
 		pe_particles.partspawn({
 			amount = 2,
 			time = 2,
-			minpos = {x=np.x,y=np.y+.4,z=np.z},
-			maxpos = {x=np.x,y=np.y+.4,z=np.z},
-			minvel = {x=-.5,y=1,z=-.5},
-			maxvel = {x=.5,y=1,z=.5},
+			minpos = {x=arr.x,y=arr.y+.4,z=arr.z},
+			maxpos = {x=arr.x,y=arr.y+.4,z=arr.z},
+			minvel = {x=-.5+lwx,y=1,z=-.5+lwz},
+			maxvel = {x=.5+lwx,y=1,z=.5+lwz},
 			minacc = vector.new(),
 			maxacc = vector.new(),
 			minexptime = 1,
@@ -137,10 +150,10 @@ pe_particles.torches = function(player)
 		pe_particles.partspawn({
 			amount = 1,
 			time = 2,
-			minpos = {x=np.x,y=np.y+.4,z=np.z},
-			maxpos = {x=np.x,y=np.y+.4,z=np.z},
-			minvel = {x=-.5,y=1,z=-.5},
-			maxvel = {x=.5,y=1,z=.5},
+			minpos = {x=arr.x,y=arr.y+.4,z=arr.z},
+			maxpos = {x=arr.x,y=arr.y+.4,z=arr.z},
+			minvel = {x=-.5+lwx,y=1,z=-.5+lwz},
+			maxvel = {x=.5+lwx,y=1,z=.5+lwz},
 			minacc = vector.new(),
 			minacc = vector.new(),
 			minexptime = 1,
@@ -155,16 +168,21 @@ pe_particles.torches = function(player)
 end
 pe_particles.g_torches = function(player)
 	local nodes = pe_particles.searchForNodes(player, "glooptest:kalite_torch")
+	local lwx = wx
+	local lwz = wz
+	if minetest.get_node_light(player:getpos(), .5) ~= 15 then
+		lwx = 0
+		lwz = 0
+	end
 	for i, arr in ipairs(nodes) do
-		local np = {x=arr.x,y=arr.y,z=arr.z}
-		if i >= SOURCES+1 then break end
+		if i >= pe_particles.SOURCES+1 then break end
 		pe_particles.partspawn({
 			amount = 5,
 			time = 2,
-			minpos = {x=np.x,y=np.y+.5,z=np.z},
-			maxpos = {x=np.x,y=np.y+.5,z=np.z},
-			minvel = {x=-.5,y=2,z=-.5},
-			maxvel = {x=.5,y=3,z=.5},
+			minpos = {x=arr.x,y=arr.y+.5,z=arr.z},
+			maxpos = {x=arr.x,y=arr.y+.5,z=arr.z},
+			minvel = {x=-.5+lwx,y=2,z=-.5+lwz},
+			maxvel = {x=.5+lwx,y=3,z=.5+lwz},
 			minacc = vector.new(),
 			maxacc = vector.new(),
 			minexptime = .5,
@@ -179,17 +197,22 @@ pe_particles.g_torches = function(player)
 end
 
 pe_particles.fire = function(player)
-	local nodes = pe_particles.searchForNodes(player, "fire:basic_flame")
+	local lwx = wx
+	local lwz = wz
+	if minetest.get_node_light(player:getpos(), .5) ~= 15 then
+		lwx = 0
+		lwz = 0
+	end
+	local nodes = pe_particles.searchForNodes(player, {"fire:basic_flame","fire:permanent_flame"})
 	for i, arr in ipairs(nodes) do
-		local np = {x=arr.x,y=arr.y,z=arr.z}
-		if i >= SOURCES+1 then break end
+		if i >= pe_particles.SOURCES+1 then break end
 		pe_particles.partspawn({
 			amount = 10,
 			time = 2,
-			minpos = {x=np.x-.4,y=np.y+.4,z=np.z-.4},
-			maxpos = {x=np.x+.4,y=np.y+.4,z=np.z+.4},
-			minvel = {x=-.5,y=2,z=-.5},
-			maxvel = {x=.5,y=3,z=.5},
+			minpos = {x=arr.x-.4,y=arr.y+.4,z=arr.z-.4},
+			maxpos = {x=arr.x+.4,y=arr.y+.4,z=arr.z+.4},
+			minvel = {x=-.5+lwx,y=2,z=-.5+lwz},
+			maxvel = {x=.5+lwx,y=3,z=.5+lwz},
 			minacc = vector.new(),
 			minacc = vector.new(),
 			minexptime = .5,
@@ -207,7 +230,7 @@ pe_particles.cr_fire = function(player)
 	local nodes = pe_particles.searchForNodes(player, "caverealms:constant_flame")
 	for i, arr in ipairs(nodes) do
 		local np = {x=arr.x,y=arr.y,z=arr.z}
-		if i >= SOURCES+1 then break end
+		if i >= pe_particles.SOURCES+1 then break end
 		pe_particles.partspawn({
 			amount = 10,
 			time = 2,
@@ -259,7 +282,7 @@ pe_particles.water = function(player)
 				playername = player:get_player_name()
 			})
 		end
-		if source > SOURCES then break end
+		if source > pe_particles.SOURCES then break end
 	end
 end
 
@@ -272,7 +295,7 @@ pe_particles.waterdrops = function(player)
 		if beneath == nil then break end
 		if beneath.name == "air" then --wtf.. lua has no loop/continue?!... shi..
 			source = source + 1
-			if source > SOURCES then break end
+			if source > pe_particles.SOURCES then break end
 			pe_particles.partspawn({
 				amount = 2,
 				time = 2,
@@ -320,7 +343,7 @@ pe_particles.lavadrops = function(player)
 		if beneath == nil then break end
 		if beneath.name == "air" then 
 			source = source + 1
-			if source > SOURCES then break end
+			if source > pe_particles.SOURCES then break end
 			pe_particles.partspawn({
 				amount = 4,
 				time = 2,
@@ -423,7 +446,7 @@ pe_particles.claustrum = function(player)
 					playername = player:get_player_name()
 				})
 			end
-			if source > SOURCES then break end
+			if source > pe_particles.SOURCES then break end
 		end
 	end
 end
@@ -492,54 +515,13 @@ pe_particles.lavaboil = function(player)
 					playername = player:get_player_name()
 				})	
 			end	
-			if source > SOURCES then break end
+			if source > pe_particles.SOURCES then break end
 		end
 	end
 end
 
 pe_particles.veil = function(player)
-	local nodes = pe_particles.searchForNodes(player, "default:river_water_source")
-	local source = 0
-	for i, arr in ipairs(nodes) do
-		local above = minetest.get_node({x=arr.x,y=arr.y+1,z=arr.z})
-		if above == nil then break end
-		if above.name == "air" then
-			local random = math.random()
-			local time = minetest.get_timeofday()*24000
-			if random < .1 and time > 6000 and time < 6700 then
-				local r1 = math.random(1,9)/10
-				local r2 = math.random(1,9)/10
-				source = source + 1
-				minetest.add_particle({
-					pos = {x=arr.x-.5+r1, y=arr.y+.9, z=arr.z-.5+r2},
-					velocity = vector.new(),
-					acceleration = vector.new(),
-					expirationtime = 20,
-					size = 7,
-					collisiondetection = false,
-					vertical = false,
-					texture = "riverveil_1.png",
-					playername = player:get_player_name()
-				})
-			elseif random > .9 and time > 5000 and time < 6500 then
-			local r1 = math.random(1,9)/10
-				local r2 = math.random(1,9)/10
-				source = source + 1
-				minetest.add_particle({
-					pos = {x=arr.x-.5+r1, y=arr.y+.7, z=arr.z-.5+r2},
-					velocity = vector.new(),
-					acceleration = vector.new(),
-					expirationtime = 20,
-					size = 5,
-					collisiondetection = false,
-					vertical = false,
-					texture = "riverveil_2.png",
-					playername = player:get_player_name()
-				})
-			end
-			if source > SOURCES then break end
-		end
-	end
+	if wp > 4 then return end
 	local nodes = pe_particles.searchForNodes(player, "default:snow")
 	for i, arr in ipairs(nodes) do
 		local random = math.random()
@@ -551,7 +533,7 @@ pe_particles.veil = function(player)
 			local vz = math.random(-10,10)/200
 			minetest.add_particle({
 				pos = {x=arr.x-.5+r1, y=arr.y-.2, z=arr.z-.5+r2},
-				velocity = {x=vx,y=0,z=vz},
+				velocity = {x=vx+wx/10,y=0,z=vz+wz/10},
 				acceleration = vector.new(),
 				expirationtime = 5,
 				size = 1,
@@ -567,7 +549,7 @@ pe_particles.veil = function(player)
 			local vz = math.random(-10,10)/200
 			minetest.add_particle({
 				pos = {x=arr.x-.5+r1, y=arr.y-.2, z=arr.z-.5+r2},
-				velocity = {x=vx,y=0,z=vz},
+				velocity = {x=vx+wx/20,y=0,z=vz+wz/20},
 				acceleration = vector.new(),
 				expirationtime = 7,
 				size = 1,
@@ -576,6 +558,49 @@ pe_particles.veil = function(player)
 				texture = "snowpixel_2.png",
 				playername = player:get_player_name()
 			})
+		end
+	end
+	if wp > 1.2 then return end
+	local nodes = pe_particles.searchForNodes(player, "default:river_water_source")
+	local source = 0
+	for i, arr in ipairs(nodes) do
+		local above = minetest.get_node({x=arr.x,y=arr.y+1,z=arr.z})
+		if above == nil then break end
+		if above.name == "air" then
+			local random = math.random()
+			local time = minetest.get_timeofday()*24000
+			if random < .1 and time > 5500 and time < 6700 then
+				local r1 = math.random(1,9)/10
+				local r2 = math.random(1,9)/10
+				source = source + 1
+				minetest.add_particle({
+					pos = {x=arr.x-.5+r1, y=arr.y+.9, z=arr.z-.5+r2},
+					velocity = {x=wx/2,y=0,z=wz/2},
+					acceleration = vector.new(),
+					expirationtime = 20,
+					size = 7,
+					collisiondetection = false,
+					vertical = false,
+					texture = "riverveil_1.png",
+					playername = player:get_player_name()
+				})
+			elseif random > .9 and time > 5000 and time < 6500 then
+			local r1 = math.random(1,9)/10
+				local r2 = math.random(1,9)/10
+				source = source + 1
+				minetest.add_particle({
+					pos = {x=arr.x-.5+r1, y=arr.y+.7, z=arr.z-.5+r2},
+					velocity = {x=wx/2,y=0,z=wz/2},
+					acceleration = vector.new(),
+					expirationtime = 20,
+					size = 5,
+					collisiondetection = false,
+					vertical = false,
+					texture = "riverveil_2.png",
+					playername = player:get_player_name()
+				})
+			end
+			if source > pe_particles.SOURCES then break end
 		end
 	end
 end
@@ -711,6 +736,188 @@ pe_particles.cr_veil = function(player)
 	end
 end
 
+pe_particles.leaves = function(player)
+	local nodes = pe_particles.searchForNodes(player, "group:leaves")
+	local source = 0
+	local random = 0
+	for i, arr in ipairs(nodes) do
+		if wp >= 1 and wp < 2 then random = math.random(1,2000)
+		elseif wp >=2 and wp < 3 then random = math.random(1,1500)
+		elseif wp >=3 and wp < 4 then random = math.random(1,1000)
+		elseif wp >=4 then random = math.random(1,500)
+		else random = math.random(1,5000)
+		end
+		if random == 1 then
+			minetest.add_particle({
+				pos = {x=arr.x, y=arr.y-.7, z=arr.z},
+				velocity = {x=0+wx*3,y=-.5,z=0+wz*3},
+				acceleration = {x=0,y=-1,z=0},
+				expirationtime = 15,
+				size = 4,
+				collisiondetection = false,
+				vertical = false,
+				texture = "leaves_"..random..".png",
+				playername = player:get_player_name()
+			})
+		elseif random == 2 then
+			minetest.add_particle({
+				pos = {x=arr.x, y=arr.y-.7, z=arr.z},
+				velocity = {x=0+wx*3,y=-.5,z=0+wz*3},
+				acceleration = {x=0,y=-1,z=0},
+				expirationtime = 15,
+				size = 4,
+				collisiondetection = false,
+				vertical = false,
+				texture = "leaves_"..random..".png",
+				playername = player:get_player_name()
+			})
+		elseif random > 2 and random < 10 then
+			if wp < 4 then return end
+			local below = minetest.get_node({x=arr.x,y=arr.y-1,z=arr.z})
+			if below == nil then break end
+			if below.name == "air" then
+				if source < pe_particles.SOURCES then
+					soruce = source + 1
+					local dr = math.random(1,5)
+					pe_particles.partspawn({
+						amount = 10,
+						time = 10,
+						minpos = {x=arr.x-1, y=arr.y-.5, z=arr.z-1},
+						maxpos = {x=arr.x+1, y=arr.y-.9, z=arr.z+1},
+						minvel = {x=wx, y=-.1, z=wz},
+						maxvel = {x=wx*2, y=-.2, z=wz*2},
+						minacc = {x=0, y=0, z=0},
+						maxacc = {x=0, y=-.2, z=0},
+						minexptime = 2,
+						maxexptime = 3,
+						minsize = 1,
+						maxsize = 2,
+						collisiondetection = true,
+						vertical = false,
+						texture = "deciduous_"..dr..".png",
+						playername = player:get_player_name()
+					})
+				end
+			end
+		end
+	end
+end
+
+pe_particles.sandstorm = function(player)
+	if wp < 2.5 then return end
+	local source = 0
+	local skip = 0
+	local nodes = pe_particles.searchForNodes(player, "default:desert_sand")
+	for i, arr in ipairs(nodes) do
+		local above = minetest.get_node({x=arr.x,y=arr.y+1,z=arr.z})
+		if above == nil then break end
+		if above.name == "air" then
+			skip = skip + 1
+			if wp >= 2.5 and wp < 3 and skip == 40 then skip = 0 end
+			if wp >= 3 and wp < 4 and skip == 40 then skip = 0 end
+			if wp >= 4 and skip == 40 then skip = 0 end
+			if skip == 0 then
+				source = source + 1
+				pe_particles.partspawn({
+					amount = 7,
+					time = 20,
+					minpos = {x=arr.x, y=arr.y+.9, z=arr.z},
+					maxpos = {x=arr.x, y=arr.y+1.1, z=arr.z},
+					minvel = {x=wx/2, y=.05, z=wz/2},
+					maxvel = {x=wx*3, y=.1, z=wz*3},
+					minacc = {x=0, y=0, z=0},
+					maxacc = {x=0, y=.01, z=0},
+					minexptime = 3,
+					maxexptime = 5,
+					minsize = 5,
+					maxsize = 5,
+					collisiondetection = true,
+					vertical = false,
+					texture = "sandstorm_1.png",
+					playername = player:get_player_name()
+				})
+				minetest.add_particle({
+					pos = {x=arr.x, y=arr.y+1, z=arr.z},
+					velocity = {x=wx*4, y=.05, z=wz*4},
+					acceleration = vector.new(),
+					expirationtime = 5,
+					size = 3,
+					collisiondetection = true,
+					vertical = false,
+					texture = "sandstorm_2.png",
+					playername = player:get_player_name()
+			})
+			end
+		end
+		if source > pe_particles.SOURCES then break end
+	end
+end
+pe_particles.snowstorm = function(player)
+	if wp < 2.5 then return end
+	local source = 0
+	local skip = 0
+	local nodes = pe_particles.searchForNodes(player, {"default:snowblock","default:dirt_with_snow"})
+	for i, arr in ipairs(nodes) do
+		local above = minetest.get_node({x=arr.x,y=arr.y+1,z=arr.z})
+		if above == nil then break end
+		if above.name == "air" then
+			skip = skip + 1
+			if wp >= 2.5 and wp < 3 and skip == 40 then skip = 0 end
+			if wp >= 3 and wp < 4 and skip == 40 then skip = 0 end
+			if wp >= 4 and skip == 40 then skip = 0 end
+			if skip == 0 then
+				source = source + 1
+				pe_particles.partspawn({
+					amount = 7,
+					time = 20,
+					minpos = {x=arr.x-1, y=arr.y+1, z=arr.z-1},
+					maxpos = {x=arr.x+1, y=arr.y+2, z=arr.z+1},
+					minvel = {x=wx/2, y=-.05, z=wz/2},
+					maxvel = {x=wx*2, y=-.1, z=wz*2},
+					minacc = {x=0, y=0, z=0},
+					maxacc = {x=0, y=-.1, z=0},
+					minexptime = 1,
+					maxexptime = 2,
+					minsize = 5,
+					maxsize = 10,
+					collisiondetection = true,
+					vertical = false,
+					texture = "snowstorm_1.png",
+					playername = player:get_player_name()
+				})
+--[[				minetest.add_particle({
+					pos = {x=arr.x, y=arr.y+1, z=arr.z},
+					velocity = {x=wx*2, y=.05, z=wz*2},
+					acceleration = vector.new(),
+					expirationtime = 5,
+					size = 3,
+					collisiondetection = true,
+					vertical = false,
+					texture = "sandstorm_2.png",
+					playername = player:get_player_name()
+			})
+--]]
+			end
+		end
+		if source > pe_particles.SOURCES then break end
+	end
+end
+--[[
+minetest.register_chatcommand("wind", {
+	params = "<x (or) z> <speed (0 - 5)>",
+	description = "wind: Modify speed of wind by x or z vector axes",
+	func = function(name, param)
+		local params={}
+		for cmd in param:gmatch("%w+") do table.insert(params,cmd) end
+		if params[1] == "nil" or tonumber(params[2]) == "nil" then return end
+		if params[1] ~= "x" and params[1] ~= "z" then return end
+		local speed = tonumber(params[2])
+		if speed > 5 or speed < -5 then return end
+		pe_particles.wind[ params[1] ] = speed
+		pr("Wind now: x="..pe_particles.wind["x"]..",z="..pe_particles.wind["z"])
+	end,
+})
+--]]
 pe_particles.searchForNodes = function(player,nodes)
 	local pos = player:getpos()
 
@@ -723,13 +930,13 @@ pe_particles.searchForNodes = function(player,nodes)
 	local z = dir.z
 --	pr(player, "x: "..x)
 --	pr(player, "z: "..z)
-	local minp = {y=pos.y-RADIUS}
-	local maxp = {y=pos.y+RADIUS}
+	local minp = {y=pos.y-pe_particles.RADIUS}
+	local maxp = {y=pos.y+pe_particles.RADIUS}
 	if x > 0 then 
 		minp["x"] = pos.x - 3
-		maxp["x"] = pos.x + RADIUS
+		maxp["x"] = pos.x + pe_particles.RADIUS
 	elseif x < 0 then
-		minp["x"] = pos.x - RADIUS
+		minp["x"] = pos.x - pe_particles.RADIUS
 		maxp["x"] = pos.x + 3
 	else
 		minp["x"] = pos.x - 3
@@ -737,9 +944,9 @@ pe_particles.searchForNodes = function(player,nodes)
 	end
 	if z > 0 then 
 		minp["z"] = pos.z - 3
-		maxp["z"] = pos.z + RADIUS
+		maxp["z"] = pos.z + pe_particles.RADIUS
 	elseif z < 0 then
-		minp["z"] = pos.z - RADIUS
+		minp["z"] = pos.z - pe_particles.RADIUS
 		maxp["z"] = pos.z + 3
 	else
 		minp["z"] = pos.z - 3
@@ -757,23 +964,41 @@ end
 
 
 
-timer = 0
-particles = {}
+
 minetest.register_globalstep(function(dtime)
 
-	timer = timer + dtime;
+	if not pe_particles.ENABLED then return end
 
-	if timer < 2 then return
-	else timer = 0 end
+	tick = tick + dtime;
+
+	if tick < 2 then return
+	else tick = 0 end
+	
+	if pe_particles.eWIND == true or pe_particles.eWIND == 10 then
+		pe_particles.eWIND = 0
+-- TODO закончить логику тут, улучшить усиление и угосание ветра
+		local rwx = math.random()/10
+		local rwz = math.random()/10
+		pe_particles.wind["x"] = pe_particles.wind["x"] + rwx
+		pe_particles.wind["z"] = pe_particles.wind["z"] + rwz
+		if debug then print("wind: x="..pe_particles.wind["x"]..",z="..pe_particles.wind["z"]) end
+		wx = pe_particles.wind["x"]			
+		wz = pe_particles.wind["z"]			
+		wp = math.abs(wx)
+		if wp < math.abs(wz) then wp = math.abs(wz) end
+	end
+	if pe_particles.eWIND then pe_particles.eWIND = pe_particles.eWIND + 1 end
+	
+	
 
 --	cleaning old spawners, cause minetest do not clean it
 --	even where spawners out of time, hi is use memory and
 --	minetest engine does not clear them, and this leads to 
 --	overflow and server freeze (not crash, but 100% CPU consumes and totally freeze)
 	local nspawners = table.getn(spawners)
-	if nspawners > SPAWNERS then
-		if debug then print("spawners: "..nspawners.."/"..SPAWNERS) end
-		for i=1, (nspawners-SPAWNERS) do
+	if nspawners > pe_particles.SPAWNERS then
+		if debug then print("spawners: "..nspawners.."/"..pe_particles.SPAWNERS) end
+		for i=1, (nspawners-pe_particles.SPAWNERS) do
 			if debug then print("remove spawner #"..spawners[1]) end
 			minetest.delete_particlespawner(spawners[1])
 			table.remove(spawners, 1)
@@ -784,18 +1009,21 @@ minetest.register_globalstep(function(dtime)
 
     for _, player in ipairs(minetest.get_connected_players()) do
 		
-		if pTORCHES					then pe_particles.torches(player) end
-		if pWDROPS					then pe_particles.waterdrops(player) end
-		if pLDROPS					then pe_particles.lavadrops(player) end
-		if pLAVABOIL				then pe_particles.lavaboil(player) end
-		if pFIRE					then pe_particles.fire(player) end
-		if pWATER					then pe_particles.water(player) end
-		if pCLAUSTRUM				then pe_particles.claustrum(player) end
-		if pVEIL					then pe_particles.veil(player) end
+		if pe_particles.pTORCHES								then pe_particles.torches(player) end
+		if pe_particles.pWDROPS									then pe_particles.waterdrops(player) end
+		if pe_particles.pLDROPS									then pe_particles.lavadrops(player) end
+		if pe_particles.pLAVABOIL								then pe_particles.lavaboil(player) end
+		if pe_particles.pFIRE									then pe_particles.fire(player) end
+		if pe_particles.pWATER									then pe_particles.water(player) end
+		if pe_particles.pCLAUSTRUM								then pe_particles.claustrum(player) end
+		if pe_particles.pVEIL									then pe_particles.veil(player) end
+		if pe_particles.pLEAVES									then pe_particles.leaves(player) end
+		if pe_particles.pSANDSTORM and pe_particles.eWIND		then pe_particles.sandstorm(player) end
+		if pe_particles.pSNOWSTORM and pe_particles.eWIND		then pe_particles.snowstorm(player) end
 		--mods
-		if pGLOOPTEST and pTORCHES	then pe_particles.g_torches(player) end
-		if pCAVEREALMS and pFIRE	then pe_particles.cr_fire(player) end
-		if pCAVEREALMS and pVEIL	then pe_particles.cr_veil(player) end
+		if pGLOOPTEST and pe_particles.pTORCHES					then pe_particles.g_torches(player) end
+		if pCAVEREALMS and pe_particles.pFIRE					then pe_particles.cr_fire(player) end
+		if pCAVEREALMS and pe_particles.pVEIL					then pe_particles.cr_veil(player) end
 
 	end
 end)
